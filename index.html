@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Boom Beach Sonar Ops - Mô phỏng & Bộ giải tối ưu</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sonar: {
+              950: '#020617',
+              900: '#0f172a',
+              850: '#111827',
+              800: '#1e293b',
+              700: '#334155',
+              cyan: '#22d3ee',
+              emerald: '#34d399',
+              crimson: '#fb7185',
+              gold: '#fbbf24'
+            }
+          },
+          boxShadow: {
+            glow: '0 0 0 1px rgba(34, 211, 238, 0.18), 0 0 24px rgba(34, 211, 238, 0.12)',
+            hit: '0 0 0 1px rgba(52, 211, 153, 0.2), 0 0 18px rgba(52, 211, 153, 0.18)',
+            miss: '0 0 0 1px rgba(251, 113, 133, 0.2), 0 0 18px rgba(251, 113, 133, 0.12)'
+          },
+          keyframes: {
+            pulseRing: {
+              '0%': { transform: 'scale(0.96)', opacity: '0.35' },
+              '70%': { transform: 'scale(1.3)', opacity: '0' },
+              '100%': { transform: 'scale(1.3)', opacity: '0' }
+            },
+            popIn: {
+              '0%': { transform: 'scale(0.92)', opacity: '0' },
+              '100%': { transform: 'scale(1)', opacity: '1' }
+            },
+            drift: {
+              '0%, 100%': { transform: 'translateY(0px)' },
+              '50%': { transform: 'translateY(-4px)' }
+            }
+          },
+          animation: {
+            pulseRing: 'pulseRing 1.8s ease-out infinite',
+            popIn: 'popIn 160ms ease-out',
+            drift: 'drift 5s ease-in-out infinite'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    html, body {
+      height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(34,211,238,0.12), transparent 25%),
+        radial-gradient(circle at bottom right, rgba(52,211,153,0.08), transparent 28%),
+        linear-gradient(180deg, #020617 0%, #0f172a 100%);
+    }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .grid-shell {
+      background:
+        linear-gradient(180deg, rgba(15,23,42,0.94), rgba(15,23,42,0.84)),
+        linear-gradient(135deg, rgba(34,211,238,0.08), rgba(52,211,153,0.04));
+    }
+    .cell {
+      aspect-ratio: 1 / 1;
+      min-width: 0;
+      transition: transform 120ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease, opacity 160ms ease;
+    }
+    .cell:hover {
+      transform: translateY(-1px) scale(1.01);
+    }
+    .cell-target {
+      outline: 2px solid rgba(34, 211, 238, 0.9);
+      outline-offset: -2px;
+    }
+    .scan-line {
+      position: absolute;
+      inset: -12% -12%;
+      background: linear-gradient(180deg, transparent, rgba(34,211,238,0.12), transparent);
+      animation: sonarSweep 5s linear infinite;
+      pointer-events: none;
+      mix-blend-mode: screen;
+    }
+    @keyframes sonarSweep {
+      0% { transform: translateY(-110%); }
+      100% { transform: translateY(110%); }
+    }
+    .grid-label {
+      user-select: none;
+      pointer-events: none;
+    }
+    .thin-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+    .thin-scrollbar::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.35); border-radius: 999px; }
+    .thin-scrollbar::-webkit-scrollbar-track { background: rgba(15,23,42,0.35); }
+  </style>
+</head>
+<body class="text-slate-100">
+  <div class="min-h-screen">
+    <header class="border-b border-slate-700/50 bg-slate-950/65 backdrop-blur-md sticky top-0 z-20">
+      <div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div class="flex items-center gap-3">
+              <div class="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/35 bg-cyan-400/10 shadow-glow">
+                <div class="absolute h-5 w-5 rounded-full border border-cyan-300/90 animate-pulseRing"></div>
+                <div class="h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.9)]"></div>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-[0.35em] text-cyan-300/80">Boom Beach Sonar Ops</p>
+                <h1 class="text-2xl font-semibold text-white sm:text-3xl">Mô phỏng & Bộ giải tối ưu</h1>
+              </div>
+            </div>
+            <p class="mt-2 max-w-3xl text-sm text-slate-300">
+              Tìm kiếm cấu hình chính xác, bản đồ nhiệt xác suất, và bộ gợi ý mục tiêu tiếp theo cho các tàu ngầm thẳng hàng với quy tắc cách nhau 1 ô.
+            </p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-xs text-slate-300">
+            <span class="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1">Bản đồ nhiệt = xác suất đặt tàu chính xác</span>
+            <span class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1">Trúng hiển thị màu ngọc lục bảo</span>
+            <span class="rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1">Trượt hiển thị màu đỏ thẫm</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+      <div class="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)_320px]">
+        <aside class="space-y-4">
+          <section class="rounded-3xl border border-slate-700/60 bg-slate-900/80 p-4 shadow-glow backdrop-blur">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300/70">Bảng điều khiển</p>
+                <h2 class="mt-1 text-lg font-semibold text-white">Thiết lập bàn cờ</h2>
+              </div>
+              <div id="validityBadge" class="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-xs text-slate-300">Sẵn sàng</div>
+            </div>
+
+            <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <label class="block">
+                <span class="mb-1 block text-xs uppercase tracking-[0.24em] text-slate-400">Kích thước lưới</span>
+                <select id="gridSize" class="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none ring-0 transition focus:border-cyan-400/70">
+                  <option value="3">3 x 3</option>
+                  <option value="4">4 x 4</option>
+                  <option value="5">5 x 5</option>
+                  <option value="6">6 x 6</option>
+                  <option value="7">7 x 7</option>
+                  <option value="8" selected>8 x 8</option>
+                  <option value="9">9 x 9</option>
+                  <option value="10">10 x 10</option>
+                </select>
+              </label>
+
+              <label class="block">
+                <span class="mb-1 block text-xs uppercase tracking-[0.24em] text-slate-400">Chế độ</span>
+                <div class="grid grid-cols-2 gap-2 rounded-2xl border border-slate-700 bg-slate-950/80 p-2">
+                  <button id="modeSimulator" class="modeBtn rounded-xl px-3 py-2 text-sm font-medium transition">Mô phỏng</button>
+                  <button id="modeSolver" class="modeBtn rounded-xl px-3 py-2 text-sm font-medium transition">Bộ giải</button>
+                </div>
+              </label>
+            </div>
+
+            <div id="paintTools" class="mt-3 rounded-2xl border border-slate-700/60 bg-slate-950/50 p-3">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <span class="text-xs uppercase tracking-[0.24em] text-slate-400">Công cụ tô của bộ giải</span>
+                <span class="text-[11px] text-slate-500">Nhấp vào ô để nhập trạng thái sonar</span>
+              </div>
+              <div class="grid grid-cols-4 gap-2">
+                <button data-paint="miss" class="paintBtn rounded-xl border border-rose-400/25 bg-rose-400/10 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-400/20">Trượt</button>
+                <button data-paint="hit" class="paintBtn rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-400/20">Trúng</button>
+                <button data-paint="sunk" class="paintBtn rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/20">Chìm</button>
+                <button data-paint="unknown" class="paintBtn rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700">Xóa</button>
+              </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 gap-2">
+              <button id="randomizeBtn" class="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20">Bố trí ngẫu nhiên mới</button>
+              <button id="resetBtn" class="rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700">Đặt lại bàn cờ</button>
+            </div>
+          </section>
+
+          <section class="rounded-3xl border border-slate-700/60 bg-slate-900/80 p-4 shadow-glow backdrop-blur">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300/70">Cấu hình hạm đội</p>
+                <h2 class="mt-1 text-lg font-semibold text-white">Tàu ngầm còn lại</h2>
+              </div>
+              <button id="defaultFleetBtn" class="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700">Hạm đội mặc định</button>
+            </div>
+            <div id="fleetInputs" class="mt-4 space-y-3"></div>
+            <p class="mt-3 text-xs text-slate-400">Tàu chỉ được đặt theo đường thẳng. Bộ giải giả định hạm đội đã cấu hình là toàn bộ số tàu ngầm còn ẩn.</p>
+          </section>
+
+          <section class="rounded-3xl border border-cyan-400/25 bg-cyan-400/10 p-4 text-sm text-cyan-50 shadow-glow backdrop-blur">
+            <h3 class="font-semibold text-white">Cách dùng</h3>
+            <p class="mt-2 text-cyan-50/90">
+              Trong chế độ mô phỏng, nhấp vào các ô chưa biết để khai hỏa. Trong chế độ bộ giải, tô bàn cờ theo kết quả quét thực tế của bạn. Bản đồ nhiệt được tính lại từ mọi bố trí hạm đội hợp lệ, và ô sáng nhất là phát bắn tiếp theo tối ưu về mặt toán học. Vì tàu ngầm không được chạm nhau, chiến thuật bàn cờ caro rất hiệu quả ở đầu trận, sau đó hãy chuyển sang các đường kề ô Trúng khi đã phát hiện mục tiêu.
+            </p>
+          </section>
+        </aside>
+
+        <section class="space-y-4">
+          <div class="rounded-3xl border border-slate-700/60 bg-slate-900/80 p-4 shadow-glow backdrop-blur">
+            <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300/70">Bộ giải trực tiếp</p>
+                <h2 class="mt-1 text-lg font-semibold text-white">Mật độ xác suất và mục tiêu tốt nhất</h2>
+                <p id="statusLine" class="mt-1 text-sm text-slate-300">Đang tải bàn cờ...</p>
+              </div>
+              <div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/60 px-3 py-2">
+                  <div class="text-[11px] uppercase tracking-[0.24em] text-slate-500">Phương án hợp lệ</div>
+                  <div id="layoutCount" class="mt-1 font-semibold text-white">0</div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/60 px-3 py-2">
+                  <div class="text-[11px] uppercase tracking-[0.24em] text-slate-500">Mục tiêu tốt nhất</div>
+                  <div id="bestTarget" class="mt-1 font-semibold text-cyan-300">--</div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/60 px-3 py-2">
+                  <div class="text-[11px] uppercase tracking-[0.24em] text-slate-500">Xác suất cao nhất</div>
+                  <div id="bestChance" class="mt-1 font-semibold text-white">0.00%</div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/60 px-3 py-2">
+                  <div class="text-[11px] uppercase tracking-[0.24em] text-slate-500">Số tàu còn lại</div>
+                  <div id="shipsLeft" class="mt-1 font-semibold text-white">0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-3xl border border-slate-700/60 bg-slate-900/80 p-4 shadow-glow backdrop-blur">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-2 text-sm text-slate-300">
+                <span class="inline-flex h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.85)]"></span>
+                Bản đồ nhiệt đậm hơn khi một ô xuất hiện trong nhiều cấu hình hạm đội hợp lệ hơn.
+              </div>
+              <div class="flex items-center gap-2 text-xs text-slate-400">
+                <span class="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1">Mục tiêu = xác suất cao nhất</span>
+                <span class="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1">Chìm sẽ tự mở vùng đệm xung quanh</span>
+              </div>
+            </div>
+
+            <div id="boardWrap" class="thin-scrollbar overflow-auto rounded-2xl border border-slate-700/70 bg-slate-950/50 p-3"></div>
+          </div>
+        </section>
+
+        <aside class="space-y-4 xl:block">
+          <section class="rounded-3xl border border-slate-700/60 bg-slate-900/80 p-4 shadow-glow backdrop-blur">
+            <p class="text-xs uppercase tracking-[0.3em] text-cyan-300/70">Bảng kiểm tra</p>
+            <h2 class="mt-1 text-lg font-semibold text-white">Chi tiết ô</h2>
+            <div id="inspector" class="mt-3 rounded-2xl border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-300">
+              Chọn một ô để xem xác suất, vị trí trên bàn cờ và trạng thái của nó.
+            </div>
+          </section>
+
+          <section class="rounded-3xl border border-slate-700/60 bg-slate-900/80 p-4 shadow-glow backdrop-blur">
+            <p class="text-xs uppercase tracking-[0.3em] text-cyan-300/70">Xếp hạng</p>
+            <h2 class="mt-1 text-lg font-semibold text-white">Ứng viên hàng đầu</h2>
+            <div id="topCandidates" class="mt-3 space-y-2"></div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const DEFAULT_FLEET = { 5: 1, 4: 2, 3: 3, 2: 4 };
+      const CELL_STATES = {
+        unknown: { label: 'Chưa biết', classes: 'bg-slate-900/75 border-slate-700 text-slate-100' },
+        miss: { label: 'Trượt', classes: 'bg-rose-500/20 border-rose-400/50 text-rose-100' },
+        hit: { label: 'Trúng', classes: 'bg-emerald-500/20 border-emerald-400/55 text-emerald-100' },
+        sunk: { label: 'Chìm', classes: 'bg-cyan-500/20 border-cyan-300/60 text-cyan-100' },
+        empty: { label: 'Trống', classes: 'bg-slate-800/85 border-slate-700 text-slate-300' }
+      };
+
+      const els = {
+        gridSize: document.getElementById('gridSize'),
+        modeSimulator: document.getElementById('modeSimulator'),
+        modeSolver: document.getElementById('modeSolver'),
+        randomizeBtn: document.getElementById('randomizeBtn'),
+        resetBtn: document.getElementById('resetBtn'),
+        defaultFleetBtn: document.getElementById('defaultFleetBtn'),
+        fleetInputs: document.getElementById('fleetInputs'),
+        boardWrap: document.getElementById('boardWrap'),
+        layoutCount: document.getElementById('layoutCount'),
+        bestTarget: document.getElementById('bestTarget'),
+        bestChance: document.getElementById('bestChance'),
+        shipsLeft: document.getElementById('shipsLeft'),
+        statusLine: document.getElementById('statusLine'),
+        inspector: document.getElementById('inspector'),
+        topCandidates: document.getElementById('topCandidates'),
+        validityBadge: document.getElementById('validityBadge'),
+        paintTools: document.getElementById('paintTools'),
+      };
+
+      const state = {
+        mode: 'simulator',
+        gridSize: 8,
+        userBoard: [],
+        fleet: { ...DEFAULT_FLEET },
+        hiddenShips: [],
+        shipMask: 0n,
+        selectedPaint: 'miss',
+        selectedCell: null,
+        recomputeTimer: null,
+        solver: {
+          probabilities: [],
+          bestIndex: -1,
+          totalLayouts: 0n,
+          top: [],
+          conflict: '',
+          sunkPlacements: [],
+          effectiveState: []
+        }
+      };
+
+      const makeCellIndex = (r, c) => r * state.gridSize + c;
+      const bit = (index) => 1n << BigInt(index);
+      const inBounds = (r, c) => r >= 0 && c >= 0 && r < state.gridSize && c < state.gridSize;
+      const toCoord = (index) => String.fromCharCode(65 + Math.floor(index / state.gridSize)) + (index % state.gridSize + 1);
+      const pct = (count, total) => {
+        if (total === 0n) return '0.00%';
+        const scaled = (count * 10000n) / total;
+        const asNum = Number(scaled) / 100;
+        return asNum.toFixed(2) + '%';
+      };
+      const compareBig = (a, b) => (a === b ? 0 : a > b ? 1 : -1);
+
+      const boardStateLabels = {
+        unknown: 'Chưa biết',
+        miss: 'Trượt',
+        hit: 'Trúng',
+        sunk: 'Chìm',
+        empty: 'Trống'
+      };
+
+      function init() {
+        buildFleetInputs();
+        setGridSize(8, true, true);
+        bindEvents();
+        setMode('simulator');
+      }
+
+      function bindEvents() {
+        els.gridSize.addEventListener('change', () => {
+          setGridSize(Number(els.gridSize.value));
+        });
+        els.modeSimulator.addEventListener('click', () => setMode('simulator'));
+        els.modeSolver.addEventListener('click', () => setMode('solver'));
+        els.randomizeBtn.addEventListener('click', () => {
+          if (state.mode !== 'simulator') {
+            setMode('simulator');
+          }
+          randomizeHiddenShips();
+          clearUserBoard();
+          renderAll();
+          scheduleRecompute();
+        });
+        els.resetBtn.addEventListener('click', () => {
+          clearUserBoard();
+          renderAll();
+          scheduleRecompute();
+        });
+        els.defaultFleetBtn.addEventListener('click', () => {
+          state.fleet = { ...DEFAULT_FLEET };
+          syncFleetInputs();
+          if (state.mode === 'simulator') randomizeHiddenShips();
+          renderAll();
+          scheduleRecompute();
+        });
+
+        document.querySelectorAll('.paintBtn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            state.selectedPaint = btn.dataset.paint;
+            refreshPaintButtons();
+          });
+        });
+      }
+
+      function setMode(mode) {
+        state.mode = mode;
+        els.modeSimulator.classList.toggle('bg-cyan-400/20', mode === 'simulator');
+        els.modeSimulator.classList.toggle('border-cyan-400/40', mode === 'simulator');
+        els.modeSimulator.classList.toggle('text-cyan-100', mode === 'simulator');
+        els.modeSimulator.classList.toggle('bg-slate-800', mode !== 'simulator');
+        els.modeSimulator.classList.toggle('border-slate-700', mode !== 'simulator');
+        els.modeSimulator.classList.toggle('text-slate-300', mode !== 'simulator');
+
+        els.modeSolver.classList.toggle('bg-cyan-400/20', mode === 'solver');
+        els.modeSolver.classList.toggle('border-cyan-400/40', mode === 'solver');
+        els.modeSolver.classList.toggle('text-cyan-100', mode === 'solver');
+        els.modeSolver.classList.toggle('bg-slate-800', mode !== 'solver');
+        els.modeSolver.classList.toggle('border-slate-700', mode !== 'solver');
+        els.modeSolver.classList.toggle('text-slate-300', mode !== 'solver');
+
+        els.paintTools.classList.toggle('hidden', mode !== 'solver');
+        els.randomizeBtn.textContent = mode === 'simulator' ? 'Bố trí ngẫu nhiên mới' : 'Chuyển sang Mô phỏng';
+        els.statusLine.textContent = mode === 'simulator'
+          ? 'Chế độ mô phỏng: nhấp các ô để tấn công hạm đội ẩn. Bản đồ nhiệt của bộ giải sẽ cập nhật sau mỗi lượt.'
+          : 'Chế độ bộ giải: tô kết quả sonar và hệ thống sẽ tính phát bắn tiếp theo mạnh nhất.';
+        if (mode === 'solver') {
+          clearHiddenShips();
+        }
+        refreshPaintButtons();
+        renderAll();
+        scheduleRecompute();
+      }
+
+      function setGridSize(size, skipSync = false, deferPaint = false) {
+        state.gridSize = size;
+        if (!skipSync) els.gridSize.value = String(size);
+        state.userBoard = Array.from({ length: size * size }, () => 'unknown');
+        state.selectedCell = null;
+        rebuildBoard();
+        buildFleetInputs();
+        if (!deferPaint) {
+          renderAll();
+          scheduleRecompute();
+        }
+      }
+
+      function buildFleetInputs() {
+        const sizes = [5, 4, 3, 2];
+        els.fleetInputs.innerHTML = '';
+        sizes.forEach((size) => {
+          const row = document.createElement('div');
+          row.className = 'flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-950/60 px-3 py-2';
+          row.innerHTML = `
+            <div>
+              <div class="text-sm font-semibold text-white">Kích thước ${size}</div>
+              <div class="text-xs text-slate-400">Tàu ngầm thẳng, ${size} ô</div>
+            </div>
+            <input type="number" min="0" max="10" step="1" data-size="${size}" class="w-20 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-right text-sm text-white outline-none focus:border-cyan-400/60" />
+          `;
+          row.querySelector('input').value = state.fleet[size] ?? 0;
+          row.querySelector('input').addEventListener('input', (e) => {
+            const val = Math.max(0, Math.min(10, Number(e.target.value || 0)));
+            state.fleet[size] = val;
+            if (state.mode === 'simulator') randomizeHiddenShips();
+            renderAll();
+            scheduleRecompute();
+          });
+          els.fleetInputs.appendChild(row);
+        });
+      }
+
+      function syncFleetInputs() {
+        els.fleetInputs.querySelectorAll('input[data-size]').forEach((input) => {
+          const size = Number(input.dataset.size);
+          input.value = String(state.fleet[size] ?? 0);
+        });
+      }
+
+      function refreshPaintButtons() {
+        document.querySelectorAll('.paintBtn').forEach((btn) => {
+          const active = btn.dataset.paint === state.selectedPaint;
+          btn.classList.toggle('ring-2', active);
+          btn.classList.toggle('ring-cyan-300/70', active);
+          btn.classList.toggle('scale-[1.02]', active);
+        });
+      }
+
+      function clearUserBoard() {
+        state.userBoard = Array.from({ length: state.gridSize * state.gridSize }, () => 'unknown');
+        state.selectedCell = null;
+        renderAll();
+      }
+
+      function clearHiddenShips() {
+        state.hiddenShips = [];
+        state.shipMask = 0n;
+      }
+
+      function randomizeHiddenShips() {
+        const fleet = expandFleet();
+        const placements = generateRandomFleet(fleet);
+        if (placements) {
+          state.hiddenShips = placements;
+          state.shipMask = placements.reduce((acc, p) => acc | p.mask, 0n);
+        } else {
+          state.hiddenShips = [];
+          state.shipMask = 0n;
+        }
+      }
+
+      function expandFleet() {
+        const sizes = [];
+        [5, 4, 3, 2].forEach((size) => {
+          for (let i = 0; i < (state.fleet[size] || 0); i += 1) sizes.push(size);
+        });
+        return sizes.sort((a, b) => b - a);
+      }
+
+      function rebuildBoard() {
+        els.boardWrap.innerHTML = '';
+        const size = state.gridSize;
+        const wrap = document.createElement('div');
+        wrap.className = 'inline-block min-w-full';
+        const grid = document.createElement('div');
+        grid.className = 'grid gap-1';
+        grid.style.gridTemplateColumns = `auto repeat(${size}, minmax(2.2rem, 1fr))`;
+
+        const corner = document.createElement('div');
+        corner.className = 'grid-label flex h-8 w-8 items-center justify-center text-xs text-slate-500';
+        grid.appendChild(corner);
+
+        for (let c = 0; c < size; c += 1) {
+          const label = document.createElement('div');
+          label.className = 'grid-label flex h-8 w-8 items-center justify-center text-xs font-semibold text-slate-400';
+          label.textContent = String(c + 1);
+          grid.appendChild(label);
+        }
+
+        for (let r = 0; r < size; r += 1) {
+          const rowLabel = document.createElement('div');
+          rowLabel.className = 'grid-label flex h-8 w-8 items-center justify-center text-xs font-semibold text-slate-400';
+          rowLabel.textContent = String.fromCharCode(65 + r);
+          grid.appendChild(rowLabel);
+
+          for (let c = 0; c < size; c += 1) {
+            const index = makeCellIndex(r, c);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.dataset.index = String(index);
+            btn.className = 'cell relative flex items-center justify-center rounded-2xl border text-[11px] font-semibold shadow-sm';
+            btn.addEventListener('click', () => onCellClick(index));
+            btn.addEventListener('contextmenu', (e) => {
+              e.preventDefault();
+              selectTile(index);
+            });
+            grid.appendChild(btn);
+          }
+        }
+
+        wrap.appendChild(grid);
+        els.boardWrap.appendChild(wrap);
+      }
+
+      function renderAll() {
+        const inputs = state.userBoard;
+        const probs = state.solver.probabilities;
+        const total = state.solver.totalLayouts;
+        const size = state.gridSize;
+        const maxProb = probs.reduce((max, p) => compareBig(p, max) > 0 ? p : max, 0n);
+        const bestIndex = state.solver.bestIndex;
+
+        const buttons = els.boardWrap.querySelectorAll('button[data-index]');
+        buttons.forEach((btn) => {
+          const index = Number(btn.dataset.index);
+          const cellState = inputs[index];
+          const prob = probs[index] || 0n;
+          const row = Math.floor(index / size);
+          const col = index % size;
+          const probPct = pct(prob, total);
+          const intensity = maxProb > 0n ? Number((prob * 1000n) / maxProb) / 1000 : 0;
+          const isBest = index === bestIndex && total > 0n && cellState === 'unknown';
+          const isSelected = state.selectedCell === index;
+
+          btn.className = 'cell relative flex items-center justify-center rounded-2xl border text-[11px] font-semibold shadow-sm';
+          btn.classList.add('animate-popIn');
+          CELL_STATES[cellState].classes.split(' ').forEach((cls) => btn.classList.add(cls));
+          btn.style.backgroundImage = '';
+          btn.style.boxShadow = 'none';
+          btn.style.opacity = '1';
+          btn.textContent = '';
+
+          if (cellState === 'unknown' && total > 0n) {
+            const alpha = 0.12 + intensity * 0.75;
+            btn.style.backgroundImage = `linear-gradient(180deg, rgba(34,211,238,${alpha}), rgba(34,211,238,${alpha * 0.55}))`;
+            btn.style.boxShadow = `inset 0 0 0 1px rgba(34,211,238,${0.08 + intensity * 0.2}), 0 0 ${10 + intensity * 18}px rgba(34,211,238,${0.04 + intensity * 0.08})`;
+            btn.style.color = intensity > 0.55 ? '#e0fbff' : '#bae6fd';
+            btn.textContent = probPct;
+          }
+
+          if (cellState === 'miss') {
+            btn.textContent = 'M';
+          } else if (cellState === 'hit') {
+            btn.textContent = 'H';
+          } else if (cellState === 'sunk') {
+            btn.textContent = 'S';
+          } else if (cellState === 'empty') {
+            btn.textContent = '·';
+          }
+
+          if (isBest) {
+            btn.classList.add('cell-target');
+            btn.style.boxShadow = '0 0 0 1px rgba(34,211,238,0.95), 0 0 28px rgba(34,211,238,0.35)';
+          } else {
+            btn.classList.remove('cell-target');
+          }
+
+          if (isSelected) {
+            btn.style.outline = '2px solid rgba(251,191,36,0.95)';
+            btn.style.outlineOffset = '-2px';
+          } else {
+            btn.style.outline = 'none';
+          }
+
+          btn.dataset.state = cellState;
+          btn.title = `${toCoord(index)} · ${boardStateLabels[cellState]}${total > 0n && cellState === 'unknown' ? ` · ${probPct} xác suất có tàu ngầm` : ''}`;
+        });
+      }
+
+      function selectTile(index) {
+        state.selectedCell = index;
+        renderAll();
+        updateInspector(index);
+      }
+
+      function onCellClick(index) {
+        if (state.mode === 'solver') {
+          const current = state.userBoard[index];
+          const next = state.selectedPaint === 'unknown' ? 'unknown' : state.selectedPaint;
+          if (current === next && next !== 'unknown') {
+            state.userBoard[index] = 'unknown';
+          } else {
+            state.userBoard[index] = next;
+          }
+          state.selectedCell = index;
+          renderAll();
+          scheduleRecompute();
+          return;
+        }
+
+        if (state.hiddenShips.length === 0) {
+          randomizeHiddenShips();
+        }
+        if (state.userBoard[index] !== 'unknown') return;
+        const hit = ((state.shipMask >> BigInt(index)) & 1n) === 1n;
+        state.userBoard[index] = hit ? 'hit' : 'miss';
+        state.selectedCell = index;
+        if (hit) {
+          evaluateSunkFromSimulation();
+        }
+        renderAll();
+        scheduleRecompute();
+      }
+
+      function evaluateSunkFromSimulation() {
+        const placements = state.hiddenShips;
+        placements.forEach((placement) => {
+          const cellsHit = placement.cells.every((cell) => state.userBoard[cell] === 'hit' || state.userBoard[cell] === 'sunk');
+          if (cellsHit) {
+            placement.cells.forEach((cell) => { state.userBoard[cell] = 'sunk'; });
+            revealMoat(placement.cells);
+          }
+        });
+      }
+
+      function revealMoat(cells) {
+        const size = state.gridSize;
+        const seen = new Set();
+        cells.forEach((index) => {
+          const r = Math.floor(index / size);
+          const c = index % size;
+          for (let dr = -1; dr <= 1; dr += 1) {
+            for (let dc = -1; dc <= 1; dc += 1) {
+              const nr = r + dr;
+              const nc = c + dc;
+              if (!inBounds(nr, nc)) continue;
+              const nIndex = makeCellIndex(nr, nc);
+              if (cells.includes(nIndex)) continue;
+              if (!seen.has(nIndex) && state.userBoard[nIndex] === 'unknown') {
+                state.userBoard[nIndex] = 'empty';
+                seen.add(nIndex);
+              }
+            }
+          }
+        });
+      }
+
+      function scheduleRecompute() {
+        if (state.recomputeTimer) clearTimeout(state.recomputeTimer);
+        state.recomputeTimer = setTimeout(() => {
+          state.recomputeTimer = null;
+          recompute();
+        }, 0);
+      }
+
+      function recompute() {
+        const unknownCount = state.userBoard.reduce((count, cell) => count + (cell === 'unknown' ? 1 : 0), 0);
+        if (state.mode === 'simulator' || unknownCount === state.gridSize * state.gridSize) {
+          const size = state.gridSize;
+          state.solver = {
+            probabilities: Array(size * size).fill(0n),
+            bestIndex: -1,
+            totalLayouts: 0n,
+            top: [],
+            conflict: '',
+            sunkPlacements: [],
+            effectiveState: state.userBoard.slice()
+          };
+          els.layoutCount.textContent = '0';
+          els.bestTarget.textContent = '--';
+          els.bestChance.textContent = '0.00%';
+          els.shipsLeft.textContent = String(sumFleet(state.fleet));
+          els.validityBadge.textContent = 'Sẵn sàng';
+          els.validityBadge.className = 'rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100';
+          els.statusLine.textContent = state.mode === 'simulator'
+            ? 'Chế độ mô phỏng đang tạm tắt bản đồ nhiệt để tránh tính toán nặng.'
+            : 'Bàn cờ hiện chưa có dữ liệu đủ để giải toán, nên bản đồ nhiệt đang ở trạng thái mặc định.';
+          els.topCandidates.innerHTML = '';
+          const empty = document.createElement('div');
+          empty.className = 'rounded-2xl border border-slate-700 bg-slate-950/50 px-3 py-3 text-sm text-slate-400';
+          empty.textContent = 'Bản đồ nhiệt chưa được tính ở trạng thái hiện tại.';
+          els.topCandidates.appendChild(empty);
+          renderAll();
+          updateInspector(state.selectedCell);
+          return;
+        }
+        const analysis = solveBoard();
+        state.solver = analysis;
+        updateSummary(analysis);
+        renderAll();
+        updateInspector(state.selectedCell);
+      }
+
+      function updateSummary(analysis) {
+        els.layoutCount.textContent = analysis.totalLayouts.toString();
+        els.bestTarget.textContent = analysis.bestIndex >= 0 ? toCoord(analysis.bestIndex) : '--';
+        els.bestChance.textContent = analysis.bestIndex >= 0 ? pct(analysis.probabilities[analysis.bestIndex], analysis.totalLayouts) : '0.00%';
+        els.shipsLeft.textContent = String(sumFleet(state.fleet) - analysis.sunkPlacements.length);
+        els.validityBadge.textContent = analysis.conflict ? 'Xung đột' : 'Sẵn sàng';
+        els.validityBadge.className = analysis.conflict
+          ? 'rounded-full border border-rose-400/30 bg-rose-400/10 px-3 py-1 text-xs text-rose-200'
+          : 'rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100';
+        els.statusLine.textContent = analysis.conflict || (analysis.totalLayouts === 0n
+          ? 'Không có bố trí hạm đội hợp lệ nào cho trạng thái bàn cờ hiện tại. Hãy kiểm tra các đánh dấu không thể xảy ra.'
+          : `Bộ giải tìm thấy ${analysis.totalLayouts.toString()} bố trí hợp lệ cho hạm đội còn lại.`);
+        renderTopCandidates(analysis);
+      }
+
+      function sumFleet(fleet) {
+        return [5, 4, 3, 2].reduce((acc, size) => acc + (fleet[size] || 0), 0);
+      }
+
+      function renderTopCandidates(analysis) {
+        els.topCandidates.innerHTML = '';
+        if (analysis.totalLayouts === 0n) {
+          const empty = document.createElement('div');
+          empty.className = 'rounded-2xl border border-slate-700 bg-slate-950/50 px-3 py-3 text-sm text-slate-400';
+          empty.textContent = 'Chưa có ứng viên hợp lệ. Hãy sửa ràng buộc bàn cờ hoặc giảm hạm đội.';
+          els.topCandidates.appendChild(empty);
+          return;
+        }
+        analysis.top.slice(0, 6).forEach((entry, idx) => {
+          const item = document.createElement('div');
+          item.className = 'flex items-center justify-between rounded-2xl border border-slate-700 bg-slate-950/50 px-3 py-3 text-sm';
+          item.innerHTML = `
+            <div>
+              <div class="font-semibold ${idx === 0 ? 'text-cyan-200' : 'text-white'}">#${idx + 1} ${toCoord(entry.index)}</div>
+              <div class="text-xs text-slate-400">Ô ${boardStateLabels[state.userBoard[entry.index]]}</div>
+            </div>
+            <div class="text-right">
+              <div class="font-semibold text-white">${pct(entry.count, analysis.totalLayouts)}</div>
+              <div class="text-xs text-slate-500">xác suất</div>
+            </div>
+          `;
+          els.topCandidates.appendChild(item);
+        });
+      }
+
+      function updateInspector(index) {
+        if (index == null || index < 0) {
+          els.inspector.innerHTML = 'Chọn một ô để xem xác suất, vị trí trên bàn cờ và trạng thái của nó.';
+          return;
+        }
+        const size = state.gridSize;
+        const row = Math.floor(index / size);
+        const col = index % size;
+        const p = state.solver.probabilities[index] || 0n;
+        const total = state.solver.totalLayouts;
+        const display = total > 0n ? pct(p, total) : '0.00%';
+        els.inspector.innerHTML = `
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-xs uppercase tracking-[0.24em] text-slate-500">Tọa độ</div>
+                <div class="mt-1 text-lg font-semibold text-white">${toCoord(index)}</div>
+              </div>
+              <div class="rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-right">
+                <div class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Trạng thái</div>
+                <div class="mt-1 font-semibold text-white">${boardStateLabels[state.userBoard[index]]}</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="rounded-2xl border border-slate-700 bg-slate-900/80 px-3 py-2">
+                <div class="text-slate-500 uppercase tracking-[0.2em]">Hàng</div>
+                <div class="mt-1 text-base font-semibold text-white">${String.fromCharCode(65 + row)}</div>
+              </div>
+              <div class="rounded-2xl border border-slate-700 bg-slate-900/80 px-3 py-2">
+                <div class="text-slate-500 uppercase tracking-[0.2em]">Cột</div>
+                <div class="mt-1 text-base font-semibold text-white">${col + 1}</div>
+              </div>
+              <div class="rounded-2xl border border-slate-700 bg-slate-900/80 px-3 py-2">
+                <div class="text-slate-500 uppercase tracking-[0.2em]">Xác suất có tàu</div>
+                <div class="mt-1 text-base font-semibold text-cyan-200">${display}</div>
+              </div>
+              <div class="rounded-2xl border border-slate-700 bg-slate-900/80 px-3 py-2">
+                <div class="text-slate-500 uppercase tracking-[0.2em]">Phương án</div>
+                <div class="mt-1 text-base font-semibold text-white">${total.toString()}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function solveBoard() {
+        const size = state.gridSize;
+        const board = state.userBoard.slice();
+        const fleet = expandFleet();
+        const sunkPlacements = extractSunkPlacements(board, fleet);
+        if (sunkPlacements.error) {
+          return {
+            probabilities: Array(size * size).fill(0n),
+            bestIndex: -1,
+            totalLayouts: 0n,
+            top: [],
+            conflict: sunkPlacements.error,
+            sunkPlacements: sunkPlacements.placements || [],
+            effectiveState: board
+          };
+        }
+        const effectiveState = board.slice();
+        const sunkMask = sunkPlacements.occupiedMask;
+        sunkPlacements.placements.forEach((placement) => {
+          placement.cells.forEach((cell) => {
+            effectiveState[cell] = 'sunk';
+          });
+          placement.moat.forEach((cell) => {
+            if (effectiveState[cell] === 'unknown') effectiveState[cell] = 'empty';
+          });
+        });
+
+        const remainingFleet = subtractFleet(fleet, sunkPlacements.placements);
+        if (remainingFleet.error) {
+          return {
+            probabilities: Array(size * size).fill(0n),
+            bestIndex: -1,
+            totalLayouts: 0n,
+            top: [],
+            conflict: remainingFleet.error,
+            sunkPlacements: sunkPlacements.placements,
+            effectiveState
+          };
+        }
+        const shipsRemaining = remainingFleet.remaining;
+        const prob = Array(size * size).fill(0n);
+        const candidatePlacements = buildCandidatePlacements(effectiveState);
+        const start = { occupiedMask: sunkMask, blockedMask: sunkPlacements.blockedMask, uncoveredHitMask: maskFromState(effectiveState, ['hit']) };
+        const total = { value: 0n };
+
+        const remainingSizes = shipsRemaining.slice().sort((a, b) => b - a);
+        const seenCache = new Map();
+
+        function recurse(remaining, occupiedMask, blockedMask, uncoveredHits) {
+          if (total.value > 50000n) return;
+          if (remaining.length === 0) {
+            if (uncoveredHits !== 0n) return;
+            total.value += 1n;
+            if (total.value > 50000n) return;
+            for (let i = 0; i < prob.length; i += 1) {
+              if (((occupiedMask >> BigInt(i)) & 1n) === 1n) prob[i] += 1n;
+            }
+            return;
+          }
+
+          const key = `${remaining.join(',')}|${occupiedMask.toString(16)}|${blockedMask.toString(16)}|${uncoveredHits.toString(16)}`;
+          if (seenCache.has(key)) return;
+          seenCache.set(key, true);
+
+          let bestIdx = -1;
+          let bestList = null;
+          let bestCount = Infinity;
+          let bestCoveredAny = false;
+
+          for (let i = 0; i < remaining.length; i += 1) {
+            const sizeKey = remaining[i];
+            const list = candidatePlacements.get(sizeKey) || [];
+            let validCount = 0;
+            let coversHitCount = 0;
+            for (const placement of list) {
+              if ((placement.mask & blockedMask) !== 0n) continue;
+              if ((placement.mask & maskFromStates(effectiveState, ['miss', 'empty'])) !== 0n) continue;
+              validCount += 1;
+              if ((placement.mask & uncoveredHits) !== 0n) coversHitCount += 1;
+            }
+            if (validCount === 0) return;
+            const score = uncoveredHits !== 0n ? (coversHitCount > 0 ? coversHitCount : validCount + 1000000) : validCount;
+            if (score < bestCount) {
+              bestCount = score;
+              bestIdx = i;
+              bestList = list;
+              bestCoveredAny = coversHitCount > 0;
+            }
+          }
+
+          if (bestIdx === -1) return;
+          const chosenSize = remaining[bestIdx];
+          const nextRemaining = remaining.slice(0, bestIdx).concat(remaining.slice(bestIdx + 1));
+          for (const placement of bestList) {
+            if ((placement.mask & blockedMask) !== 0n) continue;
+            if ((placement.mask & maskFromStates(effectiveState, ['miss', 'empty'])) !== 0n) continue;
+            if (uncoveredHits !== 0n && (placement.mask & uncoveredHits) === 0n && bestCoveredAny) continue;
+            const nextOccupied = occupiedMask | placement.mask;
+            const nextBlocked = blockedMask | placement.moatMask;
+            const nextUncovered = uncoveredHits & ~placement.mask;
+            if ((nextUncovered & ~nextBlocked & maskFromStates(effectiveState, ['hit'])) !== nextUncovered) {
+              // no-op safeguard
+            }
+            recurse(nextRemaining, nextOccupied, nextBlocked, nextUncovered);
+          }
+        }
+
+        const staticForbidden = maskFromStates(effectiveState, ['miss', 'empty']);
+        const hitMask = maskFromStates(effectiveState, ['hit']);
+
+        if ((sunkMask & staticForbidden) !== 0n) {
+          return {
+            probabilities: Array(size * size).fill(0n),
+            bestIndex: -1,
+            totalLayouts: 0n,
+            top: [],
+            conflict: 'Một tàu ngầm đã chìm chồng lên một ô bị cấm.',
+            sunkPlacements: sunkPlacements.placements,
+            effectiveState
+          };
+        }
+
+        recurse(remainingSizes, start.occupiedMask, start.blockedMask, hitMask & ~start.occupiedMask);
+
+        const cutOff = total.value > 50000n;
+
+        const top = prob
+          .map((count, index) => ({ index, count }))
+          .filter((entry) => effectiveState[entry.index] === 'unknown')
+          .sort((a, b) => compareBig(b.count, a.count) || a.index - b.index);
+        const bestIndex = top.length > 0 && total.value > 0n ? top[0].index : -1;
+
+        return {
+          probabilities: prob,
+          bestIndex,
+          totalLayouts: total.value,
+          top,
+          conflict: cutOff
+            ? 'Đã dừng sớm vì số lượng bố trí hợp lệ vượt ngưỡng an toàn 50000 để bảo vệ trình duyệt.'
+            : total.value === 0n ? 'Không có bố trí hạm đội hợp lệ nào cho trạng thái bàn cờ hiện tại. Hãy kiểm tra các đánh dấu hoặc số lượng hạm đội.' : '',
+          sunkPlacements: sunkPlacements.placements,
+          effectiveState
+        };
+      }
+
+      function subtractFleet(fleet, sunkPlacements) {
+        const counts = { ...state.fleet };
+        sunkPlacements.forEach((placement) => {
+          const len = placement.cells.length;
+          if ((counts[len] || 0) <= 0) {
+            counts.error = `Tàu ngầm đã chìm kích thước ${len} vượt quá hạm đội đã cấu hình.`;
+          } else {
+            counts[len] -= 1;
+          }
+        });
+        if (counts.error) {
+          return { remaining: [], error: counts.error };
+        }
+        const remaining = [];
+        [5, 4, 3, 2].forEach((size) => {
+          for (let i = 0; i < (counts[size] || 0); i += 1) remaining.push(size);
+        });
+        return { remaining, error: '' };
+      }
+
+      function extractSunkPlacements(board, fleet) {
+        const size = state.gridSize;
+        const visited = new Set();
+        const placements = [];
+        let occupiedMask = 0n;
+        let blockedMask = 0n;
+        const sunkIndices = board.map((s, i) => s === 'sunk' ? i : -1).filter((i) => i >= 0);
+
+        for (const start of sunkIndices) {
+          if (visited.has(start)) continue;
+          const queue = [start];
+          const component = [];
+          visited.add(start);
+          while (queue.length) {
+            const current = queue.pop();
+            component.push(current);
+            const r = Math.floor(current / size);
+            const c = current % size;
+            [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => {
+              const nr = r + dr;
+              const nc = c + dc;
+              if (!inBounds(nr, nc)) return;
+              const idx = makeCellIndex(nr, nc);
+              if (board[idx] !== 'sunk' || visited.has(idx)) return;
+              visited.add(idx);
+              queue.push(idx);
+            });
+          }
+
+          component.sort((a, b) => a - b);
+          const rowSet = new Set(component.map((i) => Math.floor(i / size)));
+          const colSet = new Set(component.map((i) => i % size));
+          if (rowSet.size !== 1 && colSet.size !== 1) {
+            return { error: 'Một tàu ngầm đã chìm phải là một đường thẳng ngang hoặc dọc.', placements, occupiedMask: 0n, blockedMask: 0n };
+          }
+          if (rowSet.size === 1) {
+            const row = Math.floor(component[0] / size);
+            const cols = component.map((i) => i % size).sort((a, b) => a - b);
+            for (let i = 1; i < cols.length; i += 1) {
+              if (cols[i] !== cols[i - 1] + 1) {
+                return { error: 'Một tàu ngầm đã chìm không được có khoảng trống.', placements, occupiedMask: 0n, blockedMask: 0n };
+              }
+            }
+          } else {
+            const col = component[0] % size;
+            const rows = component.map((i) => Math.floor(i / size)).sort((a, b) => a - b);
+            for (let i = 1; i < rows.length; i += 1) {
+              if (rows[i] !== rows[i - 1] + 1) {
+                return { error: 'Một tàu ngầm đã chìm không được có khoảng trống.', placements, occupiedMask: 0n, blockedMask: 0n };
+              }
+            }
+          }
+
+          const len = component.length;
+          if ((fleet.filter((n) => n === len).length) === 0) {
+              return { error: `Tàu ngầm chìm kích thước ${len} không có trong hạm đội đã cấu hình.`, placements, occupiedMask: 0n, blockedMask: 0n };
+          }
+
+          const cells = component.slice().sort((a, b) => a - b);
+          const mask = cells.reduce((acc, idx) => acc | bit(idx), 0n);
+          const moatSet = new Set(cells);
+          cells.forEach((idx) => {
+            const r = Math.floor(idx / size);
+            const c = idx % size;
+            for (let dr = -1; dr <= 1; dr += 1) {
+              for (let dc = -1; dc <= 1; dc += 1) {
+                const nr = r + dr;
+                const nc = c + dc;
+                if (!inBounds(nr, nc)) continue;
+                moatSet.add(makeCellIndex(nr, nc));
+              }
+            }
+          });
+          const moat = [...moatSet].sort((a, b) => a - b);
+          const moatMask = moat.reduce((acc, idx) => acc | bit(idx), 0n);
+          occupiedMask |= mask;
+          blockedMask |= moatMask;
+          placements.push({ cells, mask, moat, moatMask, size: len });
+        }
+
+        return { placements, occupiedMask, blockedMask };
+      }
+
+      function maskFromState(board, states) {
+        let mask = 0n;
+        board.forEach((s, i) => {
+          if (states.includes(s)) mask |= bit(i);
+        });
+        return mask;
+      }
+
+      function maskFromStates(board, states) {
+        let mask = 0n;
+        board.forEach((s, i) => {
+          if (states.includes(s)) mask |= bit(i);
+        });
+        return mask;
+      }
+
+      function buildCandidatePlacements(board) {
+        const size = state.gridSize;
+        const bySize = new Map();
+        const forbidden = maskFromStates(board, ['miss', 'empty']);
+        [5, 4, 3, 2].forEach((shipSize) => {
+          const placements = [];
+          for (let r = 0; r < size; r += 1) {
+            for (let c = 0; c < size; c += 1) {
+              for (const [dr, dc] of [[0, 1], [1, 0]]) {
+                const cells = [];
+                let ok = true;
+                for (let i = 0; i < shipSize; i += 1) {
+                  const nr = r + dr * i;
+                  const nc = c + dc * i;
+                  if (!inBounds(nr, nc)) {
+                    ok = false;
+                    break;
+                  }
+                  const idx = makeCellIndex(nr, nc);
+                  if (((forbidden >> BigInt(idx)) & 1n) === 1n) {
+                    ok = false;
+                    break;
+                  }
+                  cells.push(idx);
+                }
+                if (!ok) continue;
+                const mask = cells.reduce((acc, idx) => acc | bit(idx), 0n);
+                const moatSet = new Set(cells);
+                cells.forEach((idx) => {
+                  const rr = Math.floor(idx / size);
+                  const cc = idx % size;
+                  for (let dr2 = -1; dr2 <= 1; dr2 += 1) {
+                    for (let dc2 = -1; dc2 <= 1; dc2 += 1) {
+                      const nr = rr + dr2;
+                      const nc = cc + dc2;
+                      if (!inBounds(nr, nc)) continue;
+                      moatSet.add(makeCellIndex(nr, nc));
+                    }
+                  }
+                });
+                placements.push({ cells, mask, moat: [...moatSet], moatMask: [...moatSet].reduce((acc, idx) => acc | bit(idx), 0n), size: shipSize });
+              }
+            }
+          }
+          bySize.set(shipSize, placements);
+        });
+        return bySize;
+      }
+
+      function getRandomPlacements(size, occupiedMask, forbiddenMask) {
+        const placements = [];
+        const limit = state.gridSize;
+        for (let r = 0; r < limit; r += 1) {
+          for (let c = 0; c < limit; c += 1) {
+            for (const [dr, dc] of [[0, 1], [1, 0]]) {
+              const cells = [];
+              let ok = true;
+              for (let i = 0; i < size; i += 1) {
+                const nr = r + dr * i;
+                const nc = c + dc * i;
+                if (!inBounds(nr, nc)) {
+                  ok = false;
+                  break;
+                }
+                const idx = makeCellIndex(nr, nc);
+                if (((forbiddenMask >> BigInt(idx)) & 1n) === 1n) {
+                  ok = false;
+                  break;
+                }
+                cells.push(idx);
+              }
+              if (!ok) continue;
+              const mask = cells.reduce((acc, idx) => acc | bit(idx), 0n);
+              if ((mask & occupiedMask) !== 0n) continue;
+              const moatSet = new Set(cells);
+              cells.forEach((idx) => {
+                const rr = Math.floor(idx / limit);
+                const cc = idx % limit;
+                for (let dr2 = -1; dr2 <= 1; dr2 += 1) {
+                  for (let dc2 = -1; dc2 <= 1; dc2 += 1) {
+                    const nr = rr + dr2;
+                    const nc = cc + dc2;
+                    if (!inBounds(nr, nc)) continue;
+                    moatSet.add(makeCellIndex(nr, nc));
+                  }
+                }
+              });
+              placements.push({ cells, mask, moatMask: [...moatSet].reduce((acc, idx) => acc | bit(idx), 0n) });
+            }
+          }
+        }
+        return placements;
+      }
+
+      function shuffle(arr) {
+        for (let i = arr.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+      }
+
+      function generateRandomFleet(fleet) {
+        const placements = [];
+        const sizes = fleet.slice();
+        const search = (index, occupiedMask, forbiddenMask) => {
+          if (index >= sizes.length) return true;
+          const size = sizes[index];
+          const candidates = shuffle(getRandomPlacements(size, occupiedMask, forbiddenMask).slice());
+          for (const placement of candidates) {
+            if ((placement.mask & forbiddenMask) !== 0n) continue;
+            placements.push({ ...placement, size });
+            if (search(index + 1, occupiedMask | placement.mask, forbiddenMask | placement.moatMask)) return true;
+            placements.pop();
+          }
+          return false;
+        };
+        return search(0, 0n, 0n) ? placements : null;
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>"}}]}
