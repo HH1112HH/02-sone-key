@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
     shipLengths: [...SHIP_LENGTH_OPTIONS],
     bestScore: 0,
   };
+  const LOCAL_STORAGE_KEY = "sonar_ops_board_state";
 
   const rowsInput = document.getElementById("rowsInput");
   const colsInput = document.getElementById("colsInput");
@@ -30,10 +31,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const fleetSummary = document.getElementById("fleetSummary");
 
   // Khởi tạo bàn cờ và bộ đếm mặc định.
-  syncBoardSize(true);
-  syncShipLengthsFromUI();
-  renderGrid();
-  clearResults("Hãy đánh dấu trạng thái bàn cờ rồi bấm Calculate.");
+  // Try load saved state first, otherwise initialize defaults.
+  if (loadFromLocalStorage()) {
+    // If loaded, compute immediately to populate probabilities.
+    renderGrid();
+    calculateBestMoves();
+  } else {
+    syncBoardSize(true);
+    syncShipLengthsFromUI();
+    renderGrid();
+    clearResults("Hãy đánh dấu trạng thái bàn cờ rồi bấm Calculate.");
+  }
 
   rowsInput.addEventListener("change", handleSizeChange);
   colsInput.addEventListener("change", handleSizeChange);
@@ -41,6 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
     input.addEventListener("change", () => {
       syncShipLengthsFromUI();
       clearResults("Danh sách tàu địch đã thay đổi. Bấm Calculate để tính lại xác suất.");
+      saveToLocalStorage();
     });
   });
   calculateBtn.addEventListener("click", calculateBestMoves);
@@ -50,6 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
     syncBoardSize(true);
     renderGrid();
     clearResults("Đã cập nhật kích thước bàn. Hãy nhập trạng thái mới nếu cần.");
+    saveToLocalStorage();
   }
 
   function syncBoardSize(forceReset = false) {
@@ -96,6 +106,73 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     return selectedLengths;
+  }
+
+  function saveToLocalStorage() {
+    try {
+      const payload = {
+        rows: state.rows,
+        cols: state.cols,
+        board: state.board,
+        shipLengths: state.shipLengths,
+      };
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
+    } catch (e) {
+      // ignore localStorage errors
+    }
+  }
+
+  function loadFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (!parsed) return false;
+
+      // Restore sizes
+      if (Number.isFinite(parsed.rows) && Number.isFinite(parsed.cols)) {
+        state.rows = Math.max(MIN_SIZE, parsed.rows);
+        state.cols = Math.max(MIN_SIZE, parsed.cols);
+        rowsInput.value = state.rows;
+        colsInput.value = state.cols;
+      }
+
+      // Restore ship lengths and sync checkboxes
+      if (Array.isArray(parsed.shipLengths)) {
+        state.shipLengths = parsed.shipLengths.slice().sort((a, b) => a - b);
+        shipLengthInputs.forEach((input) => {
+          const val = Number.parseInt(input.value, 10);
+          input.checked = state.shipLengths.includes(val);
+        });
+        syncShipLengthsFromUI();
+      }
+
+      // Restore board
+      if (Array.isArray(parsed.board)) {
+        // Ensure board matches dimensions
+        const board = parsed.board;
+        const normalized = createMatrix(state.rows, state.cols, STATUS.EMPTY);
+        for (let r = 0; r < Math.min(state.rows, board.length); r += 1) {
+          const rowArr = board[r];
+          if (!Array.isArray(rowArr)) continue;
+          for (let c = 0; c < Math.min(state.cols, rowArr.length); c += 1) {
+            const v = Number.parseInt(rowArr[c], 10);
+            normalized[r][c] = Number.isNaN(v) ? STATUS.EMPTY : Math.max(0, Math.min(3, v));
+          }
+        }
+        state.board = normalized;
+        state.scores = createMatrix(state.rows, state.cols, 0);
+      } else {
+        state.board = createMatrix(state.rows, state.cols, STATUS.EMPTY);
+        state.scores = createMatrix(state.rows, state.cols, 0);
+      }
+
+      paintBoard();
+      updateBoardStats();
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   function renderGrid() {
@@ -179,6 +256,7 @@ document.addEventListener("DOMContentLoaded", () => {
     paintBoard();
     clearResults("Bàn cờ đã thay đổi. Bấm Calculate để tính lại xác suất.");
     updateBoardStats();
+    saveToLocalStorage();
   }
 
   function resetBoard() {
@@ -190,6 +268,7 @@ document.addEventListener("DOMContentLoaded", () => {
     paintBoard();
     clearResults("Bàn đã được đặt lại. Sẵn sàng tính toán.");
     updateBoardStats();
+    saveToLocalStorage();
   }
 
   function calculateBestMoves() {
