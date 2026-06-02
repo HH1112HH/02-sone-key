@@ -1,6 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   const MIN_SIZE = 10;
-  const SHIP_LENGTHS = [2, 3, 4, 5];
+  const SHIP_LENGTH_OPTIONS = [2, 3, 4, 5];
   const STATUS = {
     EMPTY: 0,
     MISS: 1,
@@ -14,24 +14,35 @@ document.addEventListener("DOMContentLoaded", () => {
     board: [],
     scores: [],
     totalPlacements: 0,
+    shipLengths: [...SHIP_LENGTH_OPTIONS],
+    bestScore: 0,
   };
 
   const rowsInput = document.getElementById("rowsInput");
   const colsInput = document.getElementById("colsInput");
+  const shipLengthInputs = Array.from(document.querySelectorAll(".ship-length-toggle"));
   const calculateBtn = document.getElementById("calculateBtn");
   const resetBtn = document.getElementById("resetBtn");
   const gridEl = document.getElementById("grid");
   const resultsBody = document.getElementById("resultsBody");
   const resultSummary = document.getElementById("resultSummary");
   const boardStats = document.getElementById("boardStats");
+  const fleetSummary = document.getElementById("fleetSummary");
 
   // Khởi tạo bàn cờ và bộ đếm mặc định.
   syncBoardSize(true);
+  syncShipLengthsFromUI();
   renderGrid();
   clearResults("Hãy đánh dấu trạng thái bàn cờ rồi bấm Calculate.");
 
   rowsInput.addEventListener("change", handleSizeChange);
   colsInput.addEventListener("change", handleSizeChange);
+  shipLengthInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      syncShipLengthsFromUI();
+      clearResults("Danh sách tàu địch đã thay đổi. Bấm Calculate để tính lại xác suất.");
+    });
+  });
   calculateBtn.addEventListener("click", calculateBestMoves);
   resetBtn.addEventListener("click", resetBoard);
 
@@ -70,6 +81,23 @@ document.addEventListener("DOMContentLoaded", () => {
     return Array.from({ length: rows }, () => Array.from({ length: cols }, () => fillValue));
   }
 
+  function syncShipLengthsFromUI() {
+    const selectedLengths = shipLengthInputs
+      .filter((input) => input.checked)
+      .map((input) => Number.parseInt(input.value, 10))
+      .filter((length) => Number.isFinite(length))
+      .sort((left, right) => left - right);
+
+    state.shipLengths = selectedLengths;
+    if (fleetSummary) {
+      fleetSummary.textContent = selectedLengths.length > 0
+        ? `Đang hoạt động: ${selectedLengths.map((length) => `${length} ô`).join(", ")}`
+        : "Không còn tàu đang hoạt động.";
+    }
+
+    return selectedLengths;
+  }
+
   function renderGrid() {
     gridEl.innerHTML = "";
     gridEl.style.gridTemplateColumns = `repeat(${state.cols}, minmax(0, 1fr))`;
@@ -93,7 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
     updateBoardStats();
   }
 
-  function paintBoard(bestCells = new Set()) {
+  function paintBoard(bestCells = new Set(), bestScore = 0) {
     const cells = gridEl.querySelectorAll(".cell");
     cells.forEach((cell) => {
       const row = Number(cell.dataset.row);
@@ -103,6 +131,18 @@ document.addEventListener("DOMContentLoaded", () => {
       cell.classList.toggle("best", bestCells.has(cellKey(row, col)));
       cell.dataset.short = statusShortLabel(status);
       cell.title = `Hàng ${row + 1}, Cột ${col + 1} - ${statusLongLabel(status)}`;
+
+      cell.style.backgroundColor = "";
+      cell.style.backgroundImage = "";
+
+      if (status === STATUS.EMPTY && bestScore > 0) {
+        const score = state.scores[row][col];
+        if (score > 0) {
+          const ratio = score / bestScore;
+          cell.style.backgroundColor = getHeatmapColor(ratio);
+          cell.style.backgroundImage = "none";
+        }
+      }
     });
   }
 
@@ -135,6 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function cycleCellStatus(row, col) {
     state.board[row][col] = (state.board[row][col] + 1) % 4;
     state.scores[row][col] = 0;
+    state.bestScore = 0;
     paintBoard();
     clearResults("Bàn cờ đã thay đổi. Bấm Calculate để tính lại xác suất.");
     updateBoardStats();
@@ -142,8 +183,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function resetBoard() {
     syncBoardSize(false);
+    syncShipLengthsFromUI();
     state.board = createMatrix(state.rows, state.cols, STATUS.EMPTY);
     state.scores = createMatrix(state.rows, state.cols, 0);
+    state.bestScore = 0;
     paintBoard();
     clearResults("Bàn đã được đặt lại. Sẵn sàng tính toán.");
     updateBoardStats();
@@ -151,7 +194,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function calculateBestMoves() {
     syncBoardSize(false);
+    const activeShipLengths = syncShipLengthsFromUI();
     state.scores = createMatrix(state.rows, state.cols, 0);
+    state.bestScore = 0;
+
+    if (activeShipLengths.length === 0) {
+      paintBoard();
+      resultsBody.innerHTML = `<tr><td colspan="3" class="empty-state">Hãy bật ít nhất một loại tàu để solver có thể tính toán.</td></tr>`;
+      resultSummary.textContent = "Không có tàu nào đang hoạt động nên không thể mô phỏng xác suất.";
+      updateBoardStats();
+      return;
+    }
 
     const hitClusters = findHitClusters();
     const hitClusterMap = buildClusterMap(hitClusters);
@@ -159,17 +212,20 @@ document.addEventListener("DOMContentLoaded", () => {
     let totalPlacements = 0;
 
     // Đếm mật độ cho mọi vị trí tàu hợp lệ theo kích thước 2-5.
-    for (const length of SHIP_LENGTHS) {
+    for (const length of activeShipLengths) {
       totalPlacements += scanPlacements(length, hitClusters, hitClusterMap, resolvedCellSet);
     }
 
     state.totalPlacements = totalPlacements;
+    if (state.scores.length > 0) {
+      state.bestScore = Math.max(...state.scores.flat());
+    }
 
     if (totalPlacements === 0) {
       paintBoard();
       resultsBody.innerHTML = `<tr><td colspan="3" class="empty-state">Không tìm thấy cấu hình hợp lệ. Hãy kiểm tra lại các ô Miss/Hit/Sunk.</td></tr>`;
       resultSummary.textContent = "Bàn cờ hiện tại đang mâu thuẫn với luật đặt tàu. Hãy rà lại các ô đã đánh dấu.";
-      boardStats.textContent = "0 cấu hình hợp lệ";
+      updateBoardStats();
       return;
     }
 
@@ -203,7 +259,7 @@ document.addEventListener("DOMContentLoaded", () => {
       candidates.filter((candidate) => candidate.score === bestScore).map((candidate) => cellKey(candidate.row, candidate.col)),
     );
 
-    paintBoard(bestCells);
+    paintBoard(bestCells, bestScore);
     renderResults(topFive, totalPlacements, candidates.length, bestScore);
     updateBoardStats();
   }
@@ -398,7 +454,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (topFive.length === 0) {
       resultsBody.innerHTML = `<tr><td colspan="3" class="empty-state">Không có ô trống nào phù hợp để gợi ý.</td></tr>`;
       resultSummary.textContent = `Đã tìm thấy ${totalPlacements} cấu hình hợp lệ nhưng không có ô trống nào cần đánh tiếp.`;
-      boardStats.textContent = `${totalPlacements} cấu hình hợp lệ`;
       return;
     }
 
@@ -411,20 +466,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const topLabel = `Hàng ${topFive[0].row + 1}, Cột ${topFive[0].col + 1}`;
     resultSummary.textContent = `Phát hiện ${candidateCount} ô trống có thể đánh. Ô tốt nhất là ${topLabel} với điểm ${bestScore} trên ${totalPlacements} cấu hình hợp lệ.`;
-    boardStats.textContent = `${totalPlacements} cấu hình hợp lệ · best ${formatPercent(topFive[0].probability)}`;
-
-    const bestProbability = topFive[0].probability;
-    bestCellScoreEl.textContent = formatPercent(bestProbability);
-    bestCellLabelEl.textContent = topLabel;
-    clearHighlights();
-    topFive
-      .filter((item) => item.score === bestScore)
-      .forEach((item) => {
-        const bestCell = gridEl.querySelector(`.cell[data-row="${item.row}"][data-col="${item.col}"]`);
-        if (bestCell) {
-          bestCell.classList.add("best");
-        }
-      });
   }
 
   function formatPercent(value) {
@@ -435,7 +476,9 @@ document.addEventListener("DOMContentLoaded", () => {
     resultSummary.textContent = message;
     resultsBody.innerHTML = `<tr><td colspan="3" class="empty-state">Chưa có dữ liệu.</td></tr>`;
     boardStats.textContent = "Sẵn sàng tính toán";
+    state.bestScore = 0;
     paintBoard();
+    syncShipLengthsFromUI();
   }
 
   function updateBoardStats() {
@@ -469,6 +512,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function cellKey(row, col) {
     return `${row}:${col}`;
+  }
+
+  function getHeatmapColor(ratio) {
+    const normalized = Math.max(0, Math.min(1, ratio));
+    const hue = 210 - (170 * normalized);
+    const lightness = 66 - (20 * normalized);
+    return `hsl(${hue}, 90%, ${lightness}%)`;
   }
 
   function parseCellKey(key) {

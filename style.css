@@ -172,6 +172,57 @@ body::before {
   box-shadow: 0 0 0 4px rgba(78, 227, 161, 0.16);
 }
 
+.fleet-group {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fleet-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.fleet-header p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.fleet-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.fleet-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  user-select: none;
+}
+
+.fleet-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.fleet-option span {
+  color: var(--text);
+  font-size: 0.94rem;
+}
+
 .button-row {
   display: grid;
   gap: 12px;
@@ -291,7 +342,12 @@ body::before {
   font-weight: 800;
   letter-spacing: 0.02em;
   user-select: none;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, outline-color 0.15s ease, background 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    outline-color 0.15s ease,
+    background-color 0.18s ease,
+    background-image 0.18s ease;
 }
 
 .cell:hover {
