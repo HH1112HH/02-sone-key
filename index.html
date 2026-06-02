@@ -53,22 +53,46 @@
           </div>
 
           <div class="fleet-grid">
-            <label class="fleet-option">
-              <input class="ship-length-toggle" type="checkbox" value="2" checked />
-              <span>Tàu 2 ô</span>
-            </label>
-            <label class="fleet-option">
-              <input class="ship-length-toggle" type="checkbox" value="3" checked />
-              <span>Tàu 3 ô</span>
-            </label>
-            <label class="fleet-option">
-              <input class="ship-length-toggle" type="checkbox" value="4" checked />
-              <span>Tàu 4 ô</span>
-            </label>
-            <label class="fleet-option">
-              <input class="ship-length-toggle" type="checkbox" value="5" checked />
-              <span>Tàu 5 ô</span>
-            </label>
+            <div class="fleet-counter" data-ship-size="2">
+              <div class="fleet-counter-label">
+                <span>Tàu 2 ô</span>
+              </div>
+              <div class="fleet-counter-controls">
+                <button class="fleet-counter-btn" type="button" data-action="decrement" data-ship-size="2" aria-label="Giảm số tàu 2 ô">-</button>
+                <input class="fleet-count-input" type="number" min="0" max="5" value="1" readonly aria-label="Số tàu 2 ô" />
+                <button class="fleet-counter-btn" type="button" data-action="increment" data-ship-size="2" aria-label="Tăng số tàu 2 ô">+</button>
+              </div>
+            </div>
+            <div class="fleet-counter" data-ship-size="3">
+              <div class="fleet-counter-label">
+                <span>Tàu 3 ô</span>
+              </div>
+              <div class="fleet-counter-controls">
+                <button class="fleet-counter-btn" type="button" data-action="decrement" data-ship-size="3" aria-label="Giảm số tàu 3 ô">-</button>
+                <input class="fleet-count-input" type="number" min="0" max="5" value="1" readonly aria-label="Số tàu 3 ô" />
+                <button class="fleet-counter-btn" type="button" data-action="increment" data-ship-size="3" aria-label="Tăng số tàu 3 ô">+</button>
+              </div>
+            </div>
+            <div class="fleet-counter" data-ship-size="4">
+              <div class="fleet-counter-label">
+                <span>Tàu 4 ô</span>
+              </div>
+              <div class="fleet-counter-controls">
+                <button class="fleet-counter-btn" type="button" data-action="decrement" data-ship-size="4" aria-label="Giảm số tàu 4 ô">-</button>
+                <input class="fleet-count-input" type="number" min="0" max="5" value="1" readonly aria-label="Số tàu 4 ô" />
+                <button class="fleet-counter-btn" type="button" data-action="increment" data-ship-size="4" aria-label="Tăng số tàu 4 ô">+</button>
+              </div>
+            </div>
+            <div class="fleet-counter" data-ship-size="5">
+              <div class="fleet-counter-label">
+                <span>Tàu 5 ô</span>
+              </div>
+              <div class="fleet-counter-controls">
+                <button class="fleet-counter-btn" type="button" data-action="decrement" data-ship-size="5" aria-label="Giảm số tàu 5 ô">-</button>
+                <input class="fleet-count-input" type="number" min="0" max="5" value="1" readonly aria-label="Số tàu 5 ô" />
+                <button class="fleet-counter-btn" type="button" data-action="increment" data-ship-size="5" aria-label="Tăng số tàu 5 ô">+</button>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -1,6 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
   const MIN_SIZE = 10;
   const SHIP_LENGTH_OPTIONS = [2, 3, 4, 5];
+  const FLEET_COUNT_MIN = 0;
+  const FLEET_COUNT_MAX = 5;
   const STATUS = {
     EMPTY: 0,
     MISS: 1,
@@ -14,14 +16,19 @@ document.addEventListener("DOMContentLoaded", () => {
     board: [],
     scores: [],
     totalPlacements: 0,
-    shipLengths: [...SHIP_LENGTH_OPTIONS],
+    fleetCounts: {
+      2: 1,
+      3: 1,
+      4: 1,
+      5: 1,
+    },
     bestScore: 0,
   };
   const LOCAL_STORAGE_KEY = "sonar_ops_board_state";
 
   const rowsInput = document.getElementById("rowsInput");
   const colsInput = document.getElementById("colsInput");
-  const shipLengthInputs = Array.from(document.querySelectorAll(".ship-length-toggle"));
+  const fleetCounterButtons = Array.from(document.querySelectorAll(".fleet-counter-btn"));
   const calculateBtn = document.getElementById("calculateBtn");
   const resetBtn = document.getElementById("resetBtn");
   const gridEl = document.getElementById("grid");
@@ -32,26 +39,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Khởi tạo bàn cờ và bộ đếm mặc định.
   // Try load saved state first, otherwise initialize defaults.
+  initCounterButtons();
   if (loadFromLocalStorage()) {
     // If loaded, compute immediately to populate probabilities.
     renderGrid();
     calculateBestMoves();
   } else {
     syncBoardSize(true);
-    syncShipLengthsFromUI();
+    syncFleetCountsToUI();
     renderGrid();
     clearResults("Hãy đánh dấu trạng thái bàn cờ rồi bấm Calculate.");
   }
 
   rowsInput.addEventListener("change", handleSizeChange);
   colsInput.addEventListener("change", handleSizeChange);
-  shipLengthInputs.forEach((input) => {
-    input.addEventListener("change", () => {
-      syncShipLengthsFromUI();
-      clearResults("Danh sách tàu địch đã thay đổi. Bấm Calculate để tính lại xác suất.");
-      saveToLocalStorage();
-    });
-  });
   calculateBtn.addEventListener("click", calculateBestMoves);
   resetBtn.addEventListener("click", resetBoard);
 
@@ -79,6 +80,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function initCounterButtons() {
+    fleetCounterButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const shipSize = Number.parseInt(button.dataset.shipSize, 10);
+        const action = button.dataset.action;
+        if (!Number.isFinite(shipSize) || !(shipSize in state.fleetCounts)) {
+          return;
+        }
+
+        const delta = action === "increment" ? 1 : -1;
+        setFleetCount(shipSize, (state.fleetCounts[shipSize] ?? 0) + delta);
+        clearResults("Danh sách tàu địch đã thay đổi. Bấm Calculate để tính lại xác suất.");
+        saveToLocalStorage();
+      });
+    });
+  }
+
   function normalizeSize(rawValue, fallbackValue) {
     const parsed = Number.parseInt(rawValue, 10);
     if (Number.isNaN(parsed)) {
@@ -91,21 +109,62 @@ document.addEventListener("DOMContentLoaded", () => {
     return Array.from({ length: rows }, () => Array.from({ length: cols }, () => fillValue));
   }
 
-  function syncShipLengthsFromUI() {
-    const selectedLengths = shipLengthInputs
-      .filter((input) => input.checked)
-      .map((input) => Number.parseInt(input.value, 10))
-      .filter((length) => Number.isFinite(length))
-      .sort((left, right) => left - right);
+  function clampFleetCount(value) {
+    if (!Number.isFinite(value)) {
+      return FLEET_COUNT_MIN;
+    }
+    return Math.max(FLEET_COUNT_MIN, Math.min(FLEET_COUNT_MAX, value));
+  }
 
-    state.shipLengths = selectedLengths;
-    if (fleetSummary) {
-      fleetSummary.textContent = selectedLengths.length > 0
-        ? `Đang hoạt động: ${selectedLengths.map((length) => `${length} ô`).join(", ")}`
-        : "Không còn tàu đang hoạt động.";
+  function getFleetCounterInput(shipSize) {
+    return document.querySelector(`.fleet-counter[data-ship-size="${shipSize}"] .fleet-count-input`);
+  }
+
+  function syncFleetCountsToUI() {
+    SHIP_LENGTH_OPTIONS.forEach((shipSize) => {
+      const input = getFleetCounterInput(shipSize);
+      if (!input) {
+        return;
+      }
+      input.value = String(clampFleetCount(state.fleetCounts[shipSize] ?? 0));
+    });
+    updateFleetSummary();
+  }
+
+  function setFleetCount(shipSize, nextValue) {
+    const normalized = clampFleetCount(nextValue);
+    state.fleetCounts[shipSize] = normalized;
+    const input = getFleetCounterInput(shipSize);
+    if (input) {
+      input.value = String(normalized);
+    }
+    updateFleetSummary();
+  }
+
+  function updateFleetSummary() {
+    if (!fleetSummary) {
+      return;
     }
 
-    return selectedLengths;
+    const summaryParts = SHIP_LENGTH_OPTIONS
+      .map((shipSize) => ({ shipSize, count: clampFleetCount(state.fleetCounts[shipSize] ?? 0) }))
+      .filter(({ count }) => count > 0)
+      .map(({ shipSize, count }) => `${count} tàu ${shipSize} ô`);
+
+    fleetSummary.textContent = summaryParts.length > 0
+      ? `Đang hoạt động: ${summaryParts.join(", ")}`
+      : "Không còn tàu đang hoạt động.";
+  }
+
+  function buildFleetShipList() {
+    const activeShips = [];
+    SHIP_LENGTH_OPTIONS.forEach((shipSize) => {
+      const count = clampFleetCount(state.fleetCounts[shipSize] ?? 0);
+      for (let index = 0; index < count; index += 1) {
+        activeShips.push(shipSize);
+      }
+    });
+    return activeShips;
   }
 
   function saveToLocalStorage() {
@@ -114,7 +173,7 @@ document.addEventListener("DOMContentLoaded", () => {
         rows: state.rows,
         cols: state.cols,
         board: state.board,
-        shipLengths: state.shipLengths,
+        fleetCounts: state.fleetCounts,
       };
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {
@@ -137,15 +196,28 @@ document.addEventListener("DOMContentLoaded", () => {
         colsInput.value = state.cols;
       }
 
-      // Restore ship lengths and sync checkboxes
-      if (Array.isArray(parsed.shipLengths)) {
-        state.shipLengths = parsed.shipLengths.slice().sort((a, b) => a - b);
-        shipLengthInputs.forEach((input) => {
-          const val = Number.parseInt(input.value, 10);
-          input.checked = state.shipLengths.includes(val);
+      // Restore fleet counts and sync counter UI.
+      if (parsed && typeof parsed.fleetCounts === "object" && parsed.fleetCounts !== null) {
+        SHIP_LENGTH_OPTIONS.forEach((shipSize) => {
+          const value = Number.parseInt(parsed.fleetCounts[shipSize], 10);
+          state.fleetCounts[shipSize] = clampFleetCount(Number.isNaN(value) ? 0 : value);
         });
-        syncShipLengthsFromUI();
+      } else if (Array.isArray(parsed.shipLengths)) {
+        const nextCounts = {
+          2: 0,
+          3: 0,
+          4: 0,
+          5: 0,
+        };
+        parsed.shipLengths.forEach((shipLength) => {
+          const normalizedShipLength = Number.parseInt(shipLength, 10);
+          if (SHIP_LENGTH_OPTIONS.includes(normalizedShipLength)) {
+            nextCounts[normalizedShipLength] += 1;
+          }
+        });
+        state.fleetCounts = nextCounts;
       }
+      syncFleetCountsToUI();
 
       // Restore board
       if (Array.isArray(parsed.board)) {
@@ -261,7 +333,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function resetBoard() {
     syncBoardSize(false);
-    syncShipLengthsFromUI();
     state.board = createMatrix(state.rows, state.cols, STATUS.EMPTY);
     state.scores = createMatrix(state.rows, state.cols, 0);
     state.bestScore = 0;
@@ -273,7 +344,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function calculateBestMoves() {
     syncBoardSize(false);
-    const activeShipLengths = syncShipLengthsFromUI();
+    const activeShipLengths = buildFleetShipList();
     state.scores = createMatrix(state.rows, state.cols, 0);
     state.bestScore = 0;
 
@@ -290,7 +361,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const resolvedCellSet = buildResolvedCellSet();
     let totalPlacements = 0;
 
-    // Đếm mật độ cho mọi vị trí tàu hợp lệ theo kích thước 2-5.
+    // Đếm mật độ cho mọi vị trí tàu hợp lệ theo danh sách tàu đã cấu hình.
     for (const length of activeShipLengths) {
       totalPlacements += scanPlacements(length, hitClusters, hitClusterMap, resolvedCellSet);
     }
@@ -557,7 +628,7 @@ document.addEventListener("DOMContentLoaded", () => {
     boardStats.textContent = "Sẵn sàng tính toán";
     state.bestScore = 0;
     paintBoard();
-    syncShipLengthsFromUI();
+    updateFleetSummary();
   }
 
   function updateBoardStats() {
@@ -595,9 +666,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function getHeatmapColor(ratio) {
     const normalized = Math.max(0, Math.min(1, ratio));
-    const hue = 210 - (170 * normalized);
-    const lightness = 66 - (20 * normalized);
-    return `hsl(${hue}, 90%, ${lightness}%)`;
+    const hue = 18 - (8 * normalized);
+    const saturation = 92 + (8 * normalized);
+    const lightness = 20 + (16 * normalized);
+    const alpha = 0.18 + (0.74 * normalized);
+    return `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
   }
 
   function parseCellKey(key) {
